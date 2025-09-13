@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}User Dashboard - Quiz Master{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Include User Navigation -->
+    {% include 'includes/user_nav.html' %}
+
+    <!-- Main Content -->
+    <div class="container-fluid mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Available Quizzes</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if quizzes %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Subject</th>
+                                            <th>Chapter</th>
+                                            <th>Quiz Name</th>
+                                            <th>Questions</th>
+                                            <th>Time Limit</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for quiz in quizzes %}
+                                            <tr>
+                                                <td>{{ quiz.chapter.subject.name }}</td>
+                                                <td>{{ quiz.chapter.name }}</td>
+                                                <td>{{ quiz.remarks }}</td>
+                                                <td>{{ quiz.questions|length }}</td>
+                                                <td>{{ quiz.time_duration }} minutes</td>
+                                                <td>
+                                                    <a href="{{ url_for('attempt_quiz', quiz_id=quiz.id) }}" class="btn btn-primary btn-sm">
+                                                        <i class="fas fa-play me-1"></i> Start Quiz
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p class="text-muted mb-0">No quizzes available at the moment.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Recent Results</h5>
+                        <a href="{{ url_for('user_scores') }}" class="btn btn-primary">
+                            <i class="fas fa-list me-1"></i> View All Results
+                        </a>
+                    </div>
+                    <div class="card-body">
+                        {% if recent_attempts %}
+                            <div class="list-group">
+                                {% for attempt in recent_attempts %}
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-1">{{ attempt.quiz_name }}</h6>
+                                                <p class="mb-1">
+                                                    Score: 
+                                                    <span class="badge {% if (attempt.score / attempt.total_questions * 100) >= 80 %}bg-success{% elif (attempt.score / attempt.total_questions * 100) >= 60 %}bg-info{% elif (attempt.score / attempt.total_questions * 100) >= 40 %}bg-warning{% else %}bg-danger{% endif %}">
+                                                        {{ attempt.score }}/{{ attempt.total_questions }} ({{ "%.1f"|format((attempt.score / attempt.total_questions * 100)) }}%)
+                                                    </span>
+                                                </p>
+                                                <small class="text-muted">{{ attempt.attempt_date }}</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted mb-0">No quiz attempts yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if subject_stats %}
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Subject Performance</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="subjectPerformanceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Performance Trend</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="performanceTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% if subject_stats %}
+    const subjectCtx = document.getElementById('subjectPerformanceChart');
+    if (subjectCtx) {
+        const stats = {{ subject_stats|tojson }};
+        const subjectLabels = stats.map(stat => stat.subject);
+        const subjectData = stats.map(stat => stat.avg_score);
+        
+        new Chart(subjectCtx, {
+            type: 'bar',
+            data: {
+                labels: subjectLabels,
+                datasets: [{
+                    label: 'Average Score (%)',
+                    data: subjectData,
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Average Score (%)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Score: ${context.parsed.y}%`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    {% endif %}
+
+    {% if trend_data %}
+    const trendCtx = document.getElementById('performanceTrendChart');
+    if (trendCtx) {
+        const attempts = {{ trend_data|tojson }};
+        const trendLabels = attempts.map(attempt => attempt.attempt_date);
+        const trendData = attempts.map(attempt => attempt.percentage);
+        const quizNames = attempts.map(attempt => attempt.quiz_name);
+        
+        new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: trendLabels,
+                datasets: [{
+                    label: 'Quiz Score (%)',
+                    data: trendData,
+                    fill: false,
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1,
+                    pointBackgroundColor: function(context) {
+                        const value = context.raw;
+                        if (value >= 80) return 'rgba(40, 167, 69, 1)';  // success
+                        if (value >= 60) return 'rgba(23, 162, 184, 1)'; // info
+                        if (value >= 40) return 'rgba(255, 193, 7, 1)';  // warning
+                        return 'rgba(220, 53, 69, 1)';                   // danger
+                    },
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Score (%)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Attempt Date'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                return quizNames[context[0].dataIndex];
+                            },
+                            label: function(context) {
+                                return [
+                                    `Score: ${context.raw}%`,
+                                    `Date: ${context.label}`
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    {% endif %}
+});
+</script>
+{% endblock %}
